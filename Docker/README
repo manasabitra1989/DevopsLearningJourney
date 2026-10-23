@@ -1,0 +1,20 @@
+### Troubleshooting Notes
+
+* **What issue did you encounter?**
+The container failed to start because the target host network port was already occupied by another running container.
+
+
+* **Which command/output helped you find it?**
+Running `docker run` failed with the error message: `Error response from daemon: ... Bind for 0.0.0.0:8081 failed: port is already allocated`. Executing `docker ps` confirmed that the container `day8-web` was already using host port `8081`.
+
+
+* **What was the root cause?**
+Port conflict: two separate processes or containers cannot bind to the exact same host network port (`8081`) simultaneously on the same host interface.
+
+
+* **What did you change to fix it?**
+Force-removed the conflicting container using `docker rm -f day8-web`, then relaunched the container mapped to an unused host port (`8082`) using `docker run -d --name day8-web -p 8082:80 day8-web:1.0`.
+
+
+* **How did you verify the app worked?**
+Ran `docker ps` to confirm the container was running with port mapping `0.0.0.0:8082->80/tcp`, and executed `curl http://localhost:8082` to successfully receive the HTTP response displaying the `index.html` content.
