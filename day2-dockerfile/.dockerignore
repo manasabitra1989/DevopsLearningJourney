@@ -1,0 +1,7 @@
+.git
+.env
+node_modules
+*.log
+.venv
+__pycache__
+evidence
