@@ -1,0 +1,399 @@
+Phase 0: Project Setup
+
+manu@Manasa:~/DevopsLearningJourney/Docker$ mkdir -p Day11-Persistent-PostgreSQL/evidence
+manu@Manasa:~/DevopsLearningJourney/Docker$ ls -lrta
+total 24
+drwxrwxr-x 3 manu manu 4096 Oct 25 08:45 Day8
+drwxrwxr-x 3 manu manu 4096 Oct 25 08:56 day9-dockerfile
+drwxrwxr-x 5 manu manu 4096 Oct 25 08:59 ..
+drwxrwxr-x 3 manu manu 4096 Oct 26 05:39 day10-multistage
+drwxrwxr-x 3 manu manu 4096 Oct 27 13:44 Day11-Persistent-PostgreSQL
+drwxrwxr-x 6 manu manu 4096 Oct 27 13:44 .
+manu@Manasa:~/DevopsLearningJourney/Docker$ cd Day11-Persistent-PostgreSQL
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ ls -lrta
+total 12
+drwxrwxr-x 2 manu manu 4096 Oct 27 13:44 evidence
+drwxrwxr-x 6 manu manu 4096 Oct 27 13:44 ..
+drwxrwxr-x 3 manu manu 4096 Oct 27 13:44 .
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker network create app-net
+d1245533ff34fcdecee7cb625b5af79dc7aaf16b8bac4f06a42194d85faa27b4
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ ls -lrta
+total 12
+drwxrwxr-x 2 manu manu 4096 Oct 27 13:44 evidence
+drwxrwxr-x 6 manu manu 4096 Oct 27 13:44 ..
+drwxrwxr-x 3 manu manu 4096 Oct 27 13:44 .
+
+Phase 1: Prepare the Environment & Launch PostgreSQL
+Step 1: Create the custom bridge network and named volume:
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker network ls
+NETWORK ID     NAME      DRIVER    SCOPE
+d1245533ff34   app-net   bridge    local
+f37d1eba7d30   bridge    bridge    local
+f432d48bd97e   host      host      local
+9d877abad50c   none      null      local
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker volume ls
+DRIVER    VOLUME NAME
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker volume create pgdata
+pgdata
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker volume ls
+DRIVER    VOLUME NAME
+local     pgdata
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$
+
+Step 2: Run PostgreSQL
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run -d --name db --network app-net -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=changeme -e POSTGRES_DB=shop -v pgdata:/var/lib/postgresql/data postgres:16-alpine
+Unable to find image 'postgres:16-alpine' locally
+16-alpine: Pulling from library/postgres
+768bbab50810: Pull complete
+22df74fd5323: Pull complete
+d3f6cab92edc: Pull complete
+911527e7800c: Pull complete
+d982e6c592c4: Pull complete
+a735dce41235: Pull complete
+42065dcfea93: Pull complete
+f121f7f3dec1: Pull complete
+7b229517ed22: Already exists
+7ea8819886f9: Pull complete
+9f477227db48: Pull complete
+b3e0ec4a3ace: Download complete
+9f4aa3a44541: Download complete
+Digest: sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+Status: Downloaded newer image for postgres:16-alpine
+f6fe86c761d97f856954878f1326ac1cfed681fc940a6871586bd2e49e789e30
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker ps
+CONTAINER ID   IMAGE                COMMAND                  CREATED          STATUS          PORTS                                         NAMES
+f6fe86c761d9   postgres:16-alpine   "docker-entrypoint.s…"   57 seconds ago   Up 56 seconds   5432/tcp                                      db
+13ebb2f0a4f0   demo:scratch         "/server"                10 hours ago     Up 10 hours     0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   demo-scratch
+32582a906c30   demo-api:v1          "docker-entrypoint.s…"   11 hours ago     Up 11 hours     0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp   api
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker exec db pg_isready -U postgres -d shop
+/var/run/postgresql:5432 - accepting connections
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$
+
+Phase 2: Prove Data Persistence
+Step 3: Insert data into the database
+
+docker exec -it db psql -U postgres -d shop -c "CREATE TABLE IF NOT EXISTS notes (id SERIAL PRIMARY KEY, message TEXT);"
+docker exec -it db psql -U postgres -d shop -c "INSERT INTO notes (message) VALUES ('I survive!');"
+docker exec -it db psql -U postgres -d shop -c "SELECT * FROM notes;"
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker exec -it db psql -U postgres -d shop -c "CREATE TABLE IF NOT EXISTS notes (id SERIAL PRIMARY KEY, message TEXT);"
+CREATE TABLE
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker exec -it db psql -U postgres -d shop -c "INSERT INTO notes (message) VALUES ('I survive\!');"
+INSERT 0 1
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker exec db psql -U postgres -d shop -c "SELECT * FROM notes;"
+ id |   message
+----+-------------
+  1 | I survive\!
+(1 row)
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$
+
+
+Step 4: Destroy and recreate the container
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker rm -f db
+db
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run -d --name db --network app-net -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=changeme -e POSTGRES_DB=shop -v pgdata:/var/lib/postgresql/data postgres:16-alpine
+5e63649af64b656e19b264669723c5df3e6476ec4f861cd731c3d8bad4a137b4
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker ps
+CONTAINER ID   IMAGE                COMMAND                  CREATED         STATUS         PORTS                                         NAMES
+5e63649af64b   postgres:16-alpine   "docker-entrypoint.s…"   5 seconds ago   Up 4 seconds   5432/tcp                                      db
+13ebb2f0a4f0   demo:scratch         "/server"                11 hours ago    Up 11 hours    0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   demo-scratch
+32582a906c30   demo-api:v1          "docker-entrypoint.s…"   11 hours ago    Up 11 hours    0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp   api
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker exec db pg_isready -U postgres -d shop
+/var/run/postgresql:5432 - accepting connections
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker exec -it db psql -U postgres -d shop -c "SELECT * from notes"
+ id |   message
+----+-------------
+  1 | I survive\!
+(1 row)
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$
+
+Phase 3: Container Networking & DNS Resolution
+Step 5: Connect a second container to the database via internal DNS
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run --rm --network app-net -e PGPASSWORD=changeme postgres:16-alpine psql -h db -U postgres -d shop -c "SELECT * FROM notes;"
+ id |   message
+----+-------------
+  1 | I survive\!
+(1 row)
+
+
+Step 6:Compare DNS behavior (Default Bridge vs. Custom Bridge)
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run --rm alpine ping -c 1 db -- default bridge
+Unable to find image 'alpine:latest' locally
+latest: Pulling from library/alpine
+7b229517ed22: Already exists
+3da1513d2124: Download complete
+3ec36f3670df: Download complete
+Digest: sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+Status: Downloaded newer image for alpine:latest
+ping: bad address 'db'
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run --rm --network app-net alpine ping -c 1 db  --custom bridge
+PING db (172.18.0.2): 56 data bytes
+64 bytes from 172.18.0.2: seq=0 ttl=64 time=2.241 ms
+
+--- db ping statistics ---
+1 packets transmitted, 1 packets received, 0% packet loss
+round-trip min/avg/max = 2.241/2.241/2.241 ms
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL
+
+
+Think of Docker containers like people living in housing setups:
+
+---
+
+### The Default Bridge = A Busy Public Train Station
+
+* When you don't create a network, Docker drops all containers into one big, shared default area (the default bridge).
+* In this crowded station, there is **no name directory or receptionist**.
+* If you want to talk to someone, you cannot just shout their name (`db`) because nobody is keeping track of who is who.
+* The only way to reach someone is if you already know their exact, temporary **phone number (IP address)**.
+
+---
+
+### The Custom Bridge (`app-net`) = A Private Office Team with an Internal Phone Directory
+
+* When you create your own network (`docker network create app-net`), Docker sets up a dedicated, private workspace for those containers.
+
+
+* More importantly, Docker automatically assigns a **built-in digital directory / receptionist (an embedded DNS server)** to that private room.
+
+
+* Whenever a container joins this network with a name (like `--name db`), Docker automatically writes down its name and IP address in this internal phonebook.
+
+
+* When another container inside that room says, *"Hey, connect me to `db`"*, Docker looks up the directory, finds the exact IP address instantly, and connects them.
+
+
+
+---
+
+### Why doesn't Docker do this on the default bridge too?
+
+* **Legacy reasons:** The default bridge is old Docker behavior. Long ago, Docker used rigid, manual config files (`/etc/hosts`) and `--link` flags to connect containers. Changing how the default network works now would break millions of older legacy apps that rely on that old behavior.
+* **Isolation & Security:** By not auto-connecting everything by name on the default network, Docker forces you to deliberately group your containers into their own private networks so unrelated apps cannot easily discover and snoop on each other.
+
+Phase 4: Port Mapping & Conflict Troubleshooting
+Step 7: Launch first web container
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run -d --name w1 -p 18080:80 nginx:alpine
+11d2c0914234041daa113dcbeb7e01eb00c9699fc919e18f5b259c9ddb503bb3
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker ps
+CONTAINER ID   IMAGE                COMMAND                  CREATED          STATUS          PORTS                                         NAMES
+11d2c0914234   nginx:alpine         "/docker-entrypoint.…"   3 seconds ago    Up 3 seconds    0.0.0.0:18080->80/tcp, [::]:18080->80/tcp     w1
+5e63649af64b   postgres:16-alpine   "docker-entrypoint.s…"   15 minutes ago   Up 15 minutes   5432/tcp                                      db
+13ebb2f0a4f0   demo:scratch         "/server"                11 hours ago     Up 11 hours     0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   demo-scratch
+32582a906c30   demo-api:v1          "docker-entrypoint.s…"   11 hours ago     Up 11 hours     0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp   api
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ curl -I http://localhost:18080
+HTTP/1.1 200 OK
+Server: nginx/1.31.8
+Date: Tue, 27 Oct 2026 14:22:23 GMT
+Content-Type: text/html
+Content-Length: 896
+Last-Modified: Wed, 21 Oct 2026 17:54:44 GMT
+Connection: keep-alive
+ETag: "6ad8fc64-380"
+Accept-Ranges: bytes
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$
+
+Step 8: Trigger and resolve port collision
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run -d --name w2 -p 18080:80 nginx:alpine
+08a0263377bc244b1673e20f63484a08417e2f1d065f6a60ffb0a71ca5eed45c
+docker: Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint w2 (57cfa75df8331eb7086a36f4f41f3287869aa073384d9c7550b61587054fe32f): Bind for 0.0.0.0:18080 failed: port is already allocated
+
+Run 'docker run --help' for more information
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker ps
+CONTAINER ID   IMAGE                COMMAND                  CREATED              STATUS              PORTS                                         NAMES
+11d2c0914234   nginx:alpine         "/docker-entrypoint.…"   About a minute ago   Up About a minute   0.0.0.0:18080->80/tcp, [::]:18080->80/tcp     w1
+5e63649af64b   postgres:16-alpine   "docker-entrypoint.s…"   16 minutes ago       Up 16 minutes       5432/tcp                                      db
+13ebb2f0a4f0   demo:scratch         "/server"                11 hours ago         Up 11 hours         0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   demo-scratch
+32582a906c30   demo-api:v1          "docker-entrypoint.s…"   11 hours ago         Up 11 hours         0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp   api
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker ps -a
+CONTAINER ID   IMAGE                COMMAND                  CREATED              STATUS              PORTS                                         NAMES
+08a0263377bc   nginx:alpine         "/docker-entrypoint.…"   21 seconds ago       Created                                                           w2
+11d2c0914234   nginx:alpine         "/docker-entrypoint.…"   About a minute ago   Up About a minute   0.0.0.0:18080->80/tcp, [::]:18080->80/tcp     w1
+5e63649af64b   postgres:16-alpine   "docker-entrypoint.s…"   16 minutes ago       Up 16 minutes       5432/tcp                                      db
+13ebb2f0a4f0   demo:scratch         "/server"                11 hours ago         Up 11 hours         0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   demo-scratch
+32582a906c30   demo-api:v1          "docker-entrypoint.s…"   11 hours ago         Up 11 hours         0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp   api
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker rm -f w2
+w2
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run -d --name w2 -p 18081:80 nginx:alpine
+9c2eded7c7aa4873338dea7012580f46f83f6520bdc18830256345f2bc942360
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker ps
+CONTAINER ID   IMAGE                COMMAND                  CREATED          STATUS          PORTS                                         NAMES
+9c2eded7c7aa   nginx:alpine         "/docker-entrypoint.…"   4 seconds ago    Up 3 seconds    0.0.0.0:18081->80/tcp, [::]:18081->80/tcp     w2
+11d2c0914234   nginx:alpine         "/docker-entrypoint.…"   2 minutes ago    Up 2 minutes    0.0.0.0:18080->80/tcp, [::]:18080->80/tcp     w1
+5e63649af64b   postgres:16-alpine   "docker-entrypoint.s…"   17 minutes ago   Up 17 minutes   5432/tcp                                      db
+13ebb2f0a4f0   demo:scratch         "/server"                11 hours ago     Up 11 hours     0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   demo-scratch
+32582a906c30   demo-api:v1          "docker-entrypoint.s…"   11 hours ago     Up 11 hours     0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp   api
+
+
+Phase 5: Backup the Named Volume
+Step 9: Stop PostgreSQL and create the compressed archive
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker stop db
+db
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker ps -a
+CONTAINER ID   IMAGE                COMMAND                  CREATED          STATUS                     PORTS                                         NAMES
+9c2eded7c7aa   nginx:alpine         "/docker-entrypoint.…"   4 minutes ago    Up 4 minutes               0.0.0.0:18081->80/tcp, [::]:18081->80/tcp     w2
+11d2c0914234   nginx:alpine         "/docker-entrypoint.…"   7 minutes ago    Up 7 minutes               0.0.0.0:18080->80/tcp, [::]:18080->80/tcp     w1
+5e63649af64b   postgres:16-alpine   "docker-entrypoint.s…"   22 minutes ago   Exited (0) 8 seconds ago                                                 db
+13ebb2f0a4f0   demo:scratch         "/server"                11 hours ago     Up 11 hours                0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   demo-scratch
+32582a906c30   demo-api:v1          "docker-entrypoint.s…"   11 hours ago     Up 11 hours                0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp   api
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker ps
+CONTAINER ID   IMAGE          COMMAND                  CREATED         STATUS         PORTS                                         NAMES
+9c2eded7c7aa   nginx:alpine   "/docker-entrypoint.…"   4 minutes ago   Up 4 minutes   0.0.0.0:18081->80/tcp, [::]:18081->80/tcp     w2
+11d2c0914234   nginx:alpine   "/docker-entrypoint.…"   7 minutes ago   Up 7 minutes   0.0.0.0:18080->80/tcp, [::]:18080->80/tcp     w1
+13ebb2f0a4f0   demo:scratch   "/server"                11 hours ago    Up 11 hours    0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   demo-scratch
+32582a906c30   demo-api:v1    "docker-entrypoint.s…"   11 hours ago    Up 11 hours    0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp   api
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$
+
+docker run --rm -v pgdata:/data -v %cd%:/backup alpine tar czf /backup/pgdata-backup.tgz -C /data .  --this will only work in windows
+docker run --rm -v pgdata:/data -v "$(pwd)":/backup alpine tar czf /backup/pgdata-backup.tgz -C /data .
+
+docker run --rm \
+  -v pgdata:/data:ro \
+  -v "$(pwd)":/backup \
+  alpine \
+  tar czf /backup/pgdata-backup.tgz -C /data .
+  
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run --rm -v pgdata:/data -v "$(pwd)":/backup alpine tar czf /backup/pgdata-backup.tgz -C /data .
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ ls -lh pgdata-backup.tgz
+-rw-r--r-- 1 root root 6.5M Oct 27 14:37 pgdata-backup.tgz
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$
+
+List the archive contents
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run --rm \
+  -v "$(pwd)":/backup:ro \
+  alpine \
+  tar tzf /backup/pgdata-backup.tgz | head
+./
+./pg_snapshots/
+./PG_VERSION
+./base/
+./base/16384/
+./base/16384/2615_vm
+./base/16384/2608
+./base/16384/4153
+./base/16384/1247
+./base/16384/2228
+write /dev/stdout: broken pipe
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$
+
+
+Restore the backup into a new volume:
+
+Task 8 — Restore the backup into a new volume
+
+docker volume create pgdata2
+
+docker run --rm \
+  -v pgdata2:/data \
+  -v "$(pwd)":/backup:ro \
+  alpine \
+  tar xzf /backup/pgdata-backup.tgz -C /data
+  
+docker run -d \
+  --name db-restore-test \
+  --network app-net \
+  -e POSTGRES_PASSWORD=changeme \
+  -v pgdata2:/var/lib/postgresql/data \
+  postgres:16-alpine
+  
+docker logs db-restore-test
+docker exec db-restore-test pg_isready -U postgres
+
+docker exec db-restore-test psql -U postgres -d shop -c "SELECT * FROM notes;"
+
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker volume create pgdata2
+pgdata2
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker volume ls
+DRIVER    VOLUME NAME
+local     pgdata
+local     pgdata2
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run --rm \
+  -v pgdata2:/data \
+  -v "$(pwd)":/backup:ro \
+  alpine \
+  tar xzf /backup/pgdata-backup.tgz -C /data
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker run -d \
+  --name db-restore-test \
+  --network app-net \
+  -e POSTGRES_PASSWORD=changeme \
+  -v pgdata2:/var/lib/postgresql/data \
+  postgres:16-alpine
+9faae36ccc87bc3d8483ee8d14ce2aa5e030218c4bb0b895ca81f7a6fadc1322
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker logs db-restore-test
+
+PostgreSQL Database directory appears to contain a database; Skipping initialization
+
+2026-10-27 14:46:09.286 UTC [1] LOG:  starting PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+2026-10-27 14:46:09.286 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-10-27 14:46:09.287 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-10-27 14:46:09.291 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-27 14:46:09.297 UTC [29] LOG:  database system was shut down at 2026-10-27 14:25:16 UTC
+2026-10-27 14:46:09.304 UTC [1] LOG:  database system is ready to accept connections
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker exec db-restore-test psql -U postgres -d shop -c "SELECT * FROM notes;"
+ id |   message
+----+-------------
+  1 | I survive\!
+(1 row)
+
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$ docker rm -f db-restore-test
+db-restore-test
+manu@Manasa:~/DevopsLearningJourney/Docker/Day11-Persistent-PostgreSQL$
+
+docker network ls
+docker network inspect app-net
+docker network create app-net
+docker network create app-net
+docker network connect app-net web
+docker network disconnect app-net web
+docker network rm app-net
+docker volume create pgdata
+docker volume ls
+docker volume inspect pgdata
+docker volume rm pgdata
+docker volume prune
+docker run -v pgdata:/data alpine
+docker run -v "$(pwd):/app" node:20-alpine
+docker run -v "$(pwd)/conf:/etc/app:ro" alpine
+
+Warning: docker volume rm and volume-pruning commands can permanently remove data. Review the target volumes before running them, especially on servers.
+
+docker run --rm \
+  --network app-net \
+  -e PGPASSWORD=changeme \
+  postgres:16-alpine \
+  psql -h db -U postgres -d shop -c "SELECT 1;"
+  
+ 
+
+Browser
+   |
+   | host port 8080
+   v
+API container
+   |
+   | custom network: app-net
+   | hostname: db
+   v
+PostgreSQL container
+   |
+   v
+Named volume: pgdata
+
+
+
+
+
