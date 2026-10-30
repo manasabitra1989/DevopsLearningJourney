@@ -1,0 +1,197 @@
+docker login -u docman01
+dckr_pat_9y4sFUyiBeehcobBa592VhTZpb4
+
+
+1)create repo in docker.hub and create access token and copy the username and token in notepad
+2)In github, under your devopslearningjourney repo, go to settings and add secrets, dockername and docker token.
+
+
+3)create necessary folders and files in WSL:
+
+manu@Manasa:~/DevopsLearningJourney$ mkdir -p day14-docker-cicd/.github/workflows day14-docker-cicd/evidence
+manu@Manasa:~/DevopsLearningJourney$ cd day14-docker-cicd
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ ls -lrta
+total 16
+drwxrwxr-x 3 manu manu 4096 Oct 30 07:52 .github
+drwxrwxr-x 2 manu manu 4096 Oct 30 07:52 evidence
+drwxrwxr-x 6 manu manu 4096 Oct 30 07:52 ..
+drwxrwxr-x 4 manu manu 4096 Oct 30 07:52 .
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ cat << 'EOF' > requirements.txt
+flask==3.0.3
+EOF
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ cat << 'EOF' > app.py
+import os
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.get("/")
+def home():
+    return jsonify(
+        message="Docker CI/CD lab",
+        environment=os.getenv("APP_ENV", "dev")
+    )
+
+@app.get("/health")
+def health():
+    return "ok", 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+EOF
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ ls -lrta
+total 24
+drwxrwxr-x 3 manu manu 4096 Oct 30 07:52 .github
+drwxrwxr-x 2 manu manu 4096 Oct 30 07:52 evidence
+drwxrwxr-x 6 manu manu 4096 Oct 30 07:52 ..
+-rw-rw-r-- 1 manu manu   13 Oct 30 07:53 requirements.txt
+-rw-rw-r-- 1 manu manu  326 Oct 30 07:53 app.py
+drwxrwxr-x 4 manu manu 4096 Oct 30 07:53 .
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ cat << 'EOF' > Dockerfile
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app.py .
+
+RUN useradd --system --uid 10001 app
+USER app
+
+EXPOSE 5000
+
+CMD ["python", "app.py"]
+EOF
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ cat << 'EOF' > .dockerignore
+.git
+.github
+.env
+venv
+__pycache__
+reports/
+evidence/
+EOF
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ ls -lrta
+total 32
+drwxrwxr-x 3 manu manu 4096 Oct 30 07:52 .github
+drwxrwxr-x 2 manu manu 4096 Oct 30 07:52 evidence
+drwxrwxr-x 6 manu manu 4096 Oct 30 07:52 ..
+-rw-rw-r-- 1 manu manu   13 Oct 30 07:53 requirements.txt
+-rw-rw-r-- 1 manu manu  326 Oct 30 07:53 app.py
+-rw-rw-r-- 1 manu manu  269 Oct 30 07:53 Dockerfile
+-rw-rw-r-- 1 manu manu   54 Oct 30 07:53 .dockerignore
+drwxrwxr-x 4 manu manu 4096 Oct 30 07:53 .
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker build -t winter-arc-app:local .
+[+] Building 9.8s (11/11) FINISHED                                                                                                            docker:default
+ => [internal] load build definition from Dockerfile                                                                                                    0.1s
+ => => transferring dockerfile: 308B                                                                                                                    0.0s
+ => [internal] load metadata for docker.io/library/python:3.12-slim                                                                                     2.3s
+ => [internal] load .dockerignore                                                                                                                       0.0s
+ => => transferring context: 94B                                                                                                                        0.0s
+ => CACHED [1/6] FROM docker.io/library/python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159                        0.0s
+ => => resolve docker.io/library/python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159                               0.0s
+ => [internal] load build context                                                                                                                       0.0s
+ => => transferring context: 419B                                                                                                                       0.0s
+ => [2/6] WORKDIR /app                                                                                                                                  0.0s
+ => [3/6] COPY requirements.txt .                                                                                                                       0.0s
+ => [4/6] RUN pip install --no-cache-dir -r requirements.txt                                                                                            5.9s
+ => [5/6] COPY app.py .                                                                                                                                 0.0s
+ => [6/6] RUN useradd --system --uid 10001 app                                                                                                          0.6s
+ => exporting to image                                                                                                                                  0.6s
+ => => exporting layers                                                                                                                                 0.4s
+ => => exporting manifest sha256:f7578061ff76f34351c9ac106e9bae0e8ef157ded267737faf5d153ae88aef65                                                       0.0s
+ => => exporting config sha256:1b3317ce920c27accbacafd03c79e3e9f148c1183cb4a310e0f8b4b985c35bb3                                                         0.0s
+ => => exporting attestation manifest sha256:9fba166733f00f04f79ad954c4f26c3132042c1b905423f45a0457bb25400728                                           0.0s
+ => => exporting manifest list sha256:1be31cf3f23465403637b84eeefff02b24c73cbdb4a4a688878d54576220d24b                                                  0.0s
+ => => naming to docker.io/library/winter-arc-app:local                                                                                                 0.0s
+ => => unpacking to docker.io/library/winter-arc-app:local                                                                                              0.1s
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker image ls
+                                                                                                                                         i Info →   U  In Use
+IMAGE                             ID             DISK USAGE   CONTENT SIZE   EXTRA
+alpine:latest                     be2656061b53         13MB         3.94MB
+day12-docker-compose-web:latest   cac946dca595        212MB         52.2MB
+demo-api:v1                       5d249975bf02        193MB         48.4MB    U
+demo-api:v2                       c1b137155a65        193MB         48.4MB
+demo-api:v3                       02fdd2d8fe25        193MB         48.4MB
+demo-api:v4                       6ff5aafbd4e3        193MB         48.4MB
+demo:build                        189f93cf6305        441MB         91.3MB
+demo:multi                        493baca94457         19MB         5.73MB
+demo:scratch                      dae5137f0b72       6.87MB         2.09MB    U
+demo:single                       ba9c6e372360       1.31GB          319MB
+greeter:local                     7933d51ab2f9       12.1MB         3.63MB
+hello-world:latest                11a3eb1597e8       25.9kB         9.49kB
+my-app:bad                        a3acc718b7da       1.76GB          457MB
+my-app:v2                         658ffa28af08        185MB         44.9MB    U
+nginx:alpine                      a3554c0d0b48       94.5MB         27.2MB    U
+postgres:16-alpine                0cefaabd882e        420MB          117MB    U
+redis:7-alpine                    6ba19c50b567       57.8MB         16.7MB
+winter-arc-app:local              1be31cf3f234        185MB         44.9MB
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker ps
+CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker ps -a
+CONTAINER ID   IMAGE                COMMAND                  CREATED        STATUS                     PORTS                                         NAMES
+4fcbc4cba433   my-app:v2            "python app.py"          23 hours ago   Exited (255) 5 hours ago   0.0.0.0:5000->5000/tcp, [::]:5000->5000/tcp   my-app-secure
+9c2eded7c7aa   nginx:alpine         "/docker-entrypoint.…"   2 days ago     Exited (255) 2 days ago    0.0.0.0:18081->80/tcp, [::]:18081->80/tcp     w2
+11d2c0914234   nginx:alpine         "/docker-entrypoint.…"   2 days ago     Exited (255) 2 days ago    0.0.0.0:18080->80/tcp, [::]:18080->80/tcp     w1
+5e63649af64b   postgres:16-alpine   "docker-entrypoint.s…"   2 days ago     Exited (255) 2 days ago    5432/tcp                                      db
+13ebb2f0a4f0   demo:scratch         "/server"                3 days ago     Exited (255) 2 days ago    0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   demo-scratch
+32582a906c30   demo-api:v1          "docker-entrypoint.s…"   3 days ago     Exited (255) 2 days ago    0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp   api
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker rm my-app-secure
+my-app-secure
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker rm w1 w2 db demo-scratch api
+w1
+w2
+db
+demo-scratch
+api
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker ps -a
+CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker image ls
+                                                                                                                                         i Info →   U  In Use
+IMAGE                             ID             DISK USAGE   CONTENT SIZE   EXTRA
+alpine:latest                     be2656061b53         13MB         3.94MB
+day12-docker-compose-web:latest   cac946dca595        212MB         52.2MB
+demo-api:v1                       5d249975bf02        193MB         48.4MB
+demo-api:v2                       c1b137155a65        193MB         48.4MB
+demo-api:v3                       02fdd2d8fe25        193MB         48.4MB
+demo-api:v4                       6ff5aafbd4e3        193MB         48.4MB
+demo:build                        189f93cf6305        441MB         91.3MB
+demo:multi                        493baca94457         19MB         5.73MB
+demo:scratch                      dae5137f0b72       6.87MB         2.09MB
+demo:single                       ba9c6e372360       1.31GB          319MB
+greeter:local                     7933d51ab2f9       12.1MB         3.63MB
+hello-world:latest                11a3eb1597e8       25.9kB         9.49kB
+my-app:bad                        a3acc718b7da       1.76GB          457MB
+my-app:v2                         658ffa28af08        185MB         44.9MB
+nginx:alpine                      a3554c0d0b48       94.5MB         27.2MB
+postgres:16-alpine                0cefaabd882e        420MB          117MB
+redis:7-alpine                    6ba19c50b567       57.8MB         16.7MB
+winter-arc-app:local              1be31cf3f234        185MB         44.9MB
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker run -d --name local-api -p 5000:5000 winter-arc-app:local
+423c4f2c7b5163a68f691dfd3db00b16d433c2f83f704f0aaacbc0ded0cb7e7f
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker ps
+CONTAINER ID   IMAGE                  COMMAND           CREATED         STATUS         PORTS                                         NAMES
+423c4f2c7b51   winter-arc-app:local   "python app.py"   5 seconds ago   Up 4 seconds   0.0.0.0:5000->5000/tcp, [::]:5000->5000/tcp   local-api
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker ps -a
+CONTAINER ID   IMAGE                  COMMAND           CREATED         STATUS         PORTS                                         NAMES
+423c4f2c7b51   winter-arc-app:local   "python app.py"   8 seconds ago   Up 8 seconds   0.0.0.0:5000->5000/tcp, [::]:5000->5000/tcp   local-api
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ curl -f http://localhost:5000/health
+okmanu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker logs local-api
+ * Serving Flask app 'app'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://172.17.0.2:5000
+Press CTRL+C to quit
+172.17.0.1 - - [30/Oct/2026 07:57:12] "GET /health HTTP/1.1" 200 -
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$ docker rm -f local-api
+local-api
+manu@Manasa:~/DevopsLearningJourney/day14-docker-cicd$
+
+4)
