@@ -1,0 +1,814 @@
+# Understanding `docker-ci.yml` — GitHub Actions CI/CD Pipeline
+
+Let's understand the `docker-ci.yml` file from your **Day 14 Docker CI/CD assignment**, line by line.
+
+First, a small clarification: The file in your assignment is called **`docker-ci.yml`**, not `docker-cli.yaml`.
+
+- **CI** = Continuous Integration
+- **CLI** = Command Line Interface
+- **YAML** = A human-readable format used to write configuration files
+
+The `docker-ci.yml` file tells GitHub Actions **when to start the pipeline, where to execute it, and what commands to run**.
+
+Think of it as an automation script that GitHub executes for you.
+
+---
+
+# 1. Where is `docker-ci.yml` located?
+
+Your project has this structure:
+
+```text
+day14-docker-cicd/
+│
+├── app.py
+├── requirements.txt
+├── Dockerfile
+├── .dockerignore
+├── README.md
+│
+└── .github/
+    └── workflows/
+        └── docker-ci.yml
+```
+
+The location is important:
+
+```text
+.github/workflows/docker-ci.yml
+```
+
+GitHub automatically recognizes workflow files inside `.github/workflows/`.
+
+**Important:** The filename can be different, but the file must be placed inside the workflows directory.
+
+---
+
+# 2. Understand the overall structure
+
+Your assignment's YAML file has four main sections.
+
+```yaml
+name: docker-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Pipeline steps go here
+```
+
+Before understanding the individual commands, learn these keywords:
+
+| Keyword | Meaning |
+|---|---|
+| `name` | Name of the workflow |
+| `on` | Event that triggers the workflow |
+| `permissions` | Permissions granted to the workflow token |
+| `jobs` | Groups of automated tasks |
+| `runs-on` | Machine used to execute a job |
+| `steps` | Individual tasks executed inside a job |
+| `uses` | Runs a reusable GitHub Action |
+| `run` | Executes a shell command |
+| `with` | Passes configuration inputs to an action |
+| `if` | Controls whether a step executes |
+
+Now let's examine the actual assignment.
+
+---
+
+# 3. Section 1 — Workflow name
+
+```yaml
+name: docker-ci
+```
+
+This gives the workflow a name.
+
+When you open your GitHub repository and select the **Actions** tab, you'll see the workflow identified as `docker-ci`.
+
+The name is only a label. It doesn't execute any commands.
+
+---
+
+# 4. Section 2 — When should the pipeline start?
+
+```yaml
+on:
+  push:
+    branches: [main]
+
+  pull_request:
+```
+
+This is one of the most important sections.
+
+It defines the **trigger**.
+
+### What does `push` mean?
+
+Suppose you modify `app.py`.
+
+Then execute:
+
+```bash
+git add .
+git commit -m "Updated application"
+git push origin main
+```
+
+When the code is pushed to the `main` branch, GitHub Actions automatically starts the workflow.
+
+You don't have to log in to the server and execute the pipeline manually.
+
+### What does `pull_request` mean?
+
+Imagine a developer creates a branch called:
+
+```text
+feature-login
+```
+
+They modify the application and open a pull request to merge their changes into `main`.
+
+GitHub Actions can run the pipeline against the proposed changes before they are merged.
+
+This helps identify problems early.
+
+**Remember:**
+
+- `push` → Runs when matching code changes are pushed.
+- `pull_request` → Runs for pull-request events.
+
+---
+
+# 5. Section 3 — Permissions
+
+```yaml
+permissions:
+  contents: read
+```
+
+This gives the workflow's GitHub token read-only access to repository contents.
+
+Why?
+
+The workflow needs to download your application code to build the Docker image.
+
+It doesn't need permission to modify repository contents.
+
+This follows the security principle of **least privilege**.
+
+---
+
+# 6. Section 4 — Environment variables
+
+Your assignment defines:
+
+```yaml
+env:
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/winter-arc-app
+```
+
+Let's break this down.
+
+### What is `env`?
+
+`env` defines environment variables available to the workflow.
+
+Here, we're creating a variable named:
+
+```text
+IMAGE_NAME
+```
+
+Its value is constructed from the Docker Hub username and repository name.
+
+For example, suppose your Docker Hub username is:
+
+```text
+devopslearner
+```
+
+Then:
+
+```text
+IMAGE_NAME = devopslearner/winter-arc-app
+```
+
+### What is `${{ secrets.DOCKERHUB_USERNAME }}`?
+
+This is GitHub Actions expression syntax.
+
+It retrieves a value stored in **GitHub Actions Secrets**.
+
+The assignment requires two secrets:
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+```
+
+These are configured under:
+
+**GitHub Repository → Settings → Secrets and variables → Actions**
+
+The token must not be written directly into the YAML file.
+
+---
+
+# 7. Section 5 — Jobs and runners
+
+```yaml
+jobs:
+  build-test-scan:
+    runs-on: ubuntu-latest
+```
+
+Let's understand both keywords.
+
+### What is a job?
+
+A job is a collection of steps executed on a runner.
+
+Our job is called:
+
+```text
+build-test-scan
+```
+
+This is simply a name chosen for the job.
+
+### What is `runs-on: ubuntu-latest`?
+
+This tells GitHub Actions to execute the job on an Ubuntu runner.
+
+A runner is a machine that executes workflow steps.
+
+In this assignment, GitHub provides the runner.
+
+### What happens behind the scenes?
+
+```text
+Developer pushes code
+         |
+         v
+GitHub Actions detects event
+         |
+         v
+Ubuntu Runner starts
+         |
+         v
+Runner executes pipeline steps
+         |
+         v
+Job completes
+```
+
+**Important:** This runner is not your local laptop or your application production server.
+
+It is a separate execution environment provided by GitHub.
+
+---
+
+# 8. Section 6 — Download application code
+
+```yaml
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
+```
+
+The first step is called **Checkout**.
+
+### What does checkout mean?
+
+The GitHub Actions runner starts without your application files checked out into its workspace.
+
+The checkout action downloads the repository contents into the runner's workspace.
+
+For example, it makes these files available:
+
+```text
+app.py
+requirements.txt
+Dockerfile
+.dockerignore
+```
+
+Now the runner can use them.
+
+### What is `uses`?
+
+```yaml
+uses: actions/checkout@v4
+```
+
+`uses` tells GitHub Actions to execute an existing reusable action.
+
+`actions/checkout` is the action name.
+
+`v4` is the specified action version.
+
+---
+
+# 9. Section 7 — Lint the Dockerfile
+
+```yaml
+- name: Lint Dockerfile
+  uses: hadolint/hadolint-action@v3.1.0
+  with:
+    dockerfile: Dockerfile
+```
+
+This step checks the Dockerfile.
+
+### What is linting?
+
+Linting means checking code or configuration against rules and recommended practices.
+
+Hadolint examines Dockerfile instructions and reports potential problems.
+
+For example, it may identify issues involving package installation or Dockerfile best practices.
+
+### What is `with`?
+
+```yaml
+with:
+  dockerfile: Dockerfile
+```
+
+This passes the Dockerfile path to the Hadolint action.
+
+**If Hadolint reports an error that causes the step to fail, the pipeline normally stops here.**
+
+---
+
+# 10. Section 8 — Set up Docker Buildx
+
+```yaml
+- name: Set up Buildx
+  uses: docker/setup-buildx-action@v3
+```
+
+### What is Buildx?
+
+Buildx is a Docker tool that uses BuildKit to build container images.
+
+It supports features such as build caching and multi-platform builds.
+
+In this assignment, Buildx prepares the runner for the Docker image build.
+
+You can think of this step as:
+
+**Preparing the Docker build environment.**
+
+---
+
+# 11. Section 9 — Build the Docker image
+
+This is an important section.
+
+```yaml
+- name: Build image for test and scan
+  uses: docker/build-push-action@v6
+  with:
+    context: .
+    load: true
+    tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+    cache-from: type=gha
+    cache-to: type=gha,mode=max
+```
+
+Let's understand each instruction.
+
+### `uses: docker/build-push-action@v6`
+
+This invokes a reusable action that builds Docker images.
+
+### `context: .`
+
+The dot means the current project directory is the Docker build context.
+
+The build can access the relevant application files in that directory.
+
+### `load: true`
+
+This loads the built image into the runner's local Docker image store.
+
+Why?
+
+Because the next steps need to run and scan the image.
+
+### `tags:`
+
+```yaml
+tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+```
+
+This assigns a tag to the image.
+
+Suppose:
+
+```text
+IMAGE_NAME = devopslearner/winter-arc-app
+```
+
+And the Git commit SHA is:
+
+```text
+a1b2c3d4e5f6...
+```
+
+Then the image gets a tag similar to:
+
+```text
+devopslearner/winter-arc-app:a1b2c3d4e5f6...
+```
+
+`${{ github.sha }}` automatically retrieves the commit SHA associated with the workflow run.
+
+You don't need to enter it manually.
+
+### What is the benefit?
+
+You can identify which Git commit was used to build a particular image.
+
+This is helpful for troubleshooting and rollback.
+
+### What about caching?
+
+```yaml
+cache-from: type=gha
+cache-to: type=gha,mode=max
+```
+
+These instructions use GitHub Actions caching for Docker build layers.
+
+If a future build can reuse unchanged layers, it may complete faster.
+
+---
+
+# 12. Section 10 — Smoke test
+
+Your assignment contains:
+
+```yaml
+- name: Smoke test
+  run: |
+    docker run -d --name api -p 5000:5000 $IMAGE_NAME:${{ github.sha }}
+
+    for i in {1..10}; do
+      if curl -fsS http://localhost:5000/health; then
+        exit 0
+      fi
+      sleep 2
+    done
+
+    docker logs api
+    exit 1
+```
+
+Let's understand this carefully.
+
+### First command
+
+```bash
+docker run -d --name api -p 5000:5000 IMAGE_NAME:SHA
+```
+
+It starts a container using the image built in the previous step.
+
+### Next command
+
+```bash
+curl -fsS http://localhost:5000/health
+```
+
+It sends an HTTP request to the application.
+
+Expected response:
+
+```text
+ok
+```
+
+### Why is there a loop?
+
+```bash
+for i in {1..10}; do
+```
+
+Sometimes an application takes a few seconds to start.
+
+The loop allows up to ten attempts, with a two-second delay after unsuccessful attempts.
+
+### What does `exit 0` mean?
+
+```bash
+exit 0
+```
+
+It tells the shell that the step succeeded.
+
+### What does `exit 1` mean?
+
+```bash
+exit 1
+```
+
+It indicates failure.
+
+If the health endpoint doesn't respond successfully within the attempts, the workflow prints the container logs and fails.
+
+### Why is this important?
+
+Imagine the Docker image builds successfully, but the application crashes immediately after starting.
+
+Without testing, that broken image might be published.
+
+The smoke test helps catch this problem.
+
+---
+
+# 13. Section 11 — Trivy security scanning
+
+```yaml
+- name: Scan image with Trivy
+  uses: aquasecurity/trivy-action@0.28.0
+  with:
+    image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+    format: table
+    severity: HIGH,CRITICAL
+    ignore-unfixed: true
+    exit-code: 1
+```
+
+Trivy scans the Docker image for known vulnerabilities.
+
+Let's understand the important parameters.
+
+| Parameter | Meaning |
+|---|---|
+| `image-ref` | Image to scan |
+| `format: table` | Displays results in a table |
+| `severity: HIGH,CRITICAL` | Focuses on high and critical vulnerabilities |
+| `ignore-unfixed: true` | Excludes vulnerabilities without available fixes |
+| `exit-code: 1` | Makes the step fail when qualifying findings are detected |
+
+### Example
+
+Imagine Trivy detects a qualifying critical vulnerability.
+
+```text
+Docker Image
+     |
+     v
+Trivy Scan
+     |
+     v
+Critical Vulnerability
+     |
+     v
+Pipeline FAILED
+```
+
+The image won't be published by the subsequent steps.
+
+This is called a **security gate**.
+
+For your lab, the scan follows the Docker build and smoke test.
+
+---
+
+# 14. Section 12 — Login to Docker Hub
+
+```yaml
+- name: Login to Docker Hub
+  if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  uses: docker/login-action@v3
+  with:
+    username: ${{ secrets.DOCKERHUB_USERNAME }}
+    password: ${{ secrets.DOCKERHUB_TOKEN }}
+```
+
+This step authenticates the runner to Docker Hub.
+
+### What is `if`?
+
+The `if` condition determines whether the step should execute.
+
+Here:
+
+```yaml
+if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+```
+
+It means:
+
+Run this step only when the workflow was triggered by a push to the `main` branch.
+
+Why?
+
+We don't want every pull request to publish images or access publishing credentials.
+
+### What does the login action do?
+
+It uses the credentials stored in GitHub Secrets to authenticate to Docker Hub.
+
+This allows the next step to push the image.
+
+---
+
+# 15. Section 13 — Publish the Docker image
+
+```yaml
+- name: Publish immutable SHA tag
+  if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  run: docker push $IMAGE_NAME:${{ github.sha }}
+```
+
+This is the publishing step.
+
+### What does `docker push` do?
+
+It uploads the image from the runner's Docker image store to Docker Hub.
+
+For example:
+
+```bash
+docker push devopslearner/winter-arc-app:a1b2c3d4
+```
+
+The actual workflow uses the full commit SHA.
+
+Once published, the image can be downloaded from Docker Hub.
+
+**Important:** Publishing is not deployment.
+
+The image is now available in the registry, but it isn't automatically running on your application server.
+
+---
+
+# 16. Understand the complete execution
+
+Now that you've seen the individual sections, look at how they work together.
+
+```text
+           GITHUB REPOSITORY
+                  |
+                  |
+             Code Push
+                  |
+                  v
+          GITHUB ACTIONS
+                  |
+                  v
+          Ubuntu Runner
+                  |
+                  v
+          Checkout Code
+                  |
+                  v
+          Lint Dockerfile
+                  |
+                  v
+          Set Up Buildx
+                  |
+                  v
+          Build Docker Image
+                  |
+                  v
+          Run Smoke Test
+                  |
+                  v
+          Trivy Security Scan
+                  |
+             +----+----+
+             |         |
+           PASS       FAIL
+             |         |
+             v         v
+        Docker Hub   STOP
+           Login
+             |
+             v
+        Push Image
+             |
+             v
+        Docker Hub
+             |
+             v
+      Image available
+       for deployment
+```
+
+The key thing to understand is that **each step depends on the successful completion of the previous required steps**.
+
+---
+
+# 17. How do you know whether the pipeline succeeded?
+
+After pushing your code to GitHub:
+
+1. Open your GitHub repository.
+2. Select the **Actions** tab.
+3. Open the latest workflow run.
+4. Select the `build-test-scan` job.
+5. Expand individual steps to inspect their logs.
+
+GitHub displays the status of each step.
+
+For example:
+
+```text
+✓ Checkout
+✓ Lint Dockerfile
+✓ Set up Buildx
+✓ Build image for test and scan
+✓ Smoke test
+✓ Scan image with Trivy
+✓ Login to Docker Hub
+✓ Publish immutable SHA tag
+```
+
+This is an illustrative successful result, not an actual run from your repository.
+
+If a step fails, you can expand it to see the error message.
+
+---
+
+# 18. One important point about the YAML file
+
+You may have noticed two different instructions:
+
+```yaml
+uses: docker/build-push-action@v6
+```
+
+and:
+
+```yaml
+run: docker push $IMAGE_NAME:${{ github.sha }}
+```
+
+These are different.
+
+**`uses`** tells GitHub Actions to execute an existing reusable action.
+
+**`run`** tells the runner to execute a command directly.
+
+For example:
+
+```yaml
+- name: Show Docker version
+  run: docker --version
+```
+
+This executes the Docker CLI command on the runner.
+
+Also, YAML indentation matters. Use spaces consistently because incorrect indentation can make the workflow invalid.
+
+---
+
+## Final recap
+
+Your `docker-ci.yml` file is essentially telling GitHub:
+
+> When someone pushes code to the main branch, start an Ubuntu runner, download the code, check the Dockerfile, build the Docker image, start the application, test its health endpoint, scan for vulnerabilities, and publish the image to Docker Hub only if the required checks succeed.
+
+That's the purpose of today's automated pipeline.
+
+### Let's check one concept before continuing.
+
+Look at these two lines:
+
+```yaml
+runs-on: ubuntu-latest
+```
+
+```yaml
+- name: Build image
+  uses: docker/build-push-action@v6
+```
+
+**Question:** Where is the Docker image actually built?
+
+**A.** On your personal laptop.
+
+**B.** On the Ubuntu runner provided by GitHub Actions.
+
+**C.** Inside Docker Hub.
+
+The answer is **B**.
+
+This distinction is fundamental: **GitHub Actions runs the automation, Docker builds the image on the runner, and Docker Hub stores the published image.**
