@@ -1,0 +1,7 @@
+{
+  "Name": "day24-s3-oac",
+  "Description": "Day 24 Floci CloudFront practice",
+  "SigningProtocol": "sigv4",
+  "SigningBehavior": "always",
+  "OriginAccessControlOriginType": "s3"
+}
