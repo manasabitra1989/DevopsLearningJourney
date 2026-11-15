@@ -1,0 +1,61 @@
+[
+    [
+        "day29-app-sg",
+        "sg-01b4d531dfaddb11d",
+        [
+            {
+                "IpProtocol": "tcp",
+                "FromPort": 80,
+                "ToPort": 80,
+                "UserIdGroupPairs": [
+                    {
+                        "UserId": "426029558221",
+                        "GroupId": "sg-0208b81b9276707b5"
+                    }
+                ],
+                "IpRanges": [],
+                "Ipv6Ranges": [],
+                "PrefixListIds": []
+            }
+        ]
+    ],
+    [
+        "day29-db-sg",
+        "sg-0c8ffce0f9a748b16",
+        [
+            {
+                "IpProtocol": "tcp",
+                "FromPort": 5432,
+                "ToPort": 5432,
+                "UserIdGroupPairs": [
+                    {
+                        "UserId": "426029558221",
+                        "GroupId": "sg-01b4d531dfaddb11d"
+                    }
+                ],
+                "IpRanges": [],
+                "Ipv6Ranges": [],
+                "PrefixListIds": []
+            }
+        ]
+    ],
+    [
+        "day29-alb-sg",
+        "sg-0208b81b9276707b5",
+        [
+            {
+                "IpProtocol": "tcp",
+                "FromPort": 80,
+                "ToPort": 80,
+                "UserIdGroupPairs": [],
+                "IpRanges": [
+                    {
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ],
+                "Ipv6Ranges": [],
+                "PrefixListIds": []
+            }
+        ]
+    ]
+]
