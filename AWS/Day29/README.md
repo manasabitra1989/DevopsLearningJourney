@@ -420,3 +420,423 @@ git push
 ### Day 29 in one sentence
 
 **Built a private two-instance Nginx web tier behind an ALB, verified ASG self-healing, securely reached private PostgreSQL through EICE and SSH forwarding, executed successful SQL writes/reads, viewed CloudWatch metrics, and carried out the Day 29 Console teardown steps (operator-reported, without independent post-deletion inventory).**
+
+
+---
+
+## 10. AWS CLI command-by-command lab notebook (added after review)
+
+> **Accuracy note:** This section includes (A) commands captured verbatim in the visible Day 29 conversation and (B) **reconstructed AWS CLI equivalents** for build steps whose original terminal commands were not retained. The latter are clearly labeled `RECONSTRUCTED`, use known Day 29 resource identifiers, and are intended for study—not proof of the exact historical command or safe instructions to rerun on the now-deleted infrastructure. Some resources (RDS, EICE, cleanup) were created or managed in the Console. The `devops-learner` profile was used for CLI operations; **no root CLI keys are required**. Commands involving passwords use prompts or placeholders, never real secrets.
+
+### 10.1 Session variables (RECONSTRUCTED convenience, not necessarily typed in the original session)
+
+```bash
+export AWS_PROFILE=devops-learner
+export AWS_DEFAULT_REGION=ap-south-1
+VPC_ID=vpc-0db58479bcc738ebc
+PUBLIC_A=subnet-00698086d711aa54c
+PUBLIC_B=subnet-0411976d508d370d9
+PRIVATE_A=subnet-0625a3843c5b1f8f5
+PRIVATE_B=subnet-09e55084870cd5c43
+APP_SG=sg-01b4d531dfaddb11d
+ALB_SG=sg-0208b81b9276707b5
+DB_SG=sg-0c8ffce0f9a748b16
+AMI_ID=ami-049625e37c3a6404f
+LT_ID=lt-02f9220287644cf4e
+EICE_ID=eice-0624119c197966d48
+RDS_HOST=day29-postgres.c1o4oeako332.ap-south-1.rds.amazonaws.com
+```
+
+**Why:** Variables make commands easier to read and prevent copying the wrong IDs. These IDs refer to **Day 29 historical resources** and are not a new deployment plan.
+
+### 10.2 Network: VPC, two private subnets, route table (RECONSTRUCTED)
+
+We **reused** the default VPC and two public subnets; we did not create a new `day29-vpc`. The exact CIDR ranges of the custom subnets are not preserved in the available record; **do not invent or reuse CIDRs without checking availability**. The following is a *syntax template* showing the CLI operations:
+
+```bash
+# Existing VPC/public subnets were identified for reuse
+aws ec2 describe-vpcs --vpc-ids "$VPC_ID"
+aws ec2 describe-subnets --subnet-ids "$PUBLIC_A" "$PUBLIC_B"
+
+# RECONSTRUCTED template: replace <FREE_PRIVATE_CIDR_A/B> with actual unused ranges
+aws ec2 create-subnet --vpc-id "$VPC_ID" \
+  --availability-zone ap-south-1a --cidr-block '<FREE_PRIVATE_CIDR_A>'
+aws ec2 create-subnet --vpc-id "$VPC_ID" \
+  --availability-zone ap-south-1b --cidr-block '<FREE_PRIVATE_CIDR_B>'
+
+aws ec2 create-route-table --vpc-id "$VPC_ID"
+aws ec2 associate-route-table --route-table-id rtb-0fbccbf5cc01faf72 --subnet-id "$PRIVATE_A"
+aws ec2 associate-route-table --route-table-id rtb-0fbccbf5cc01faf72 --subnet-id "$PRIVATE_B"
+
+# A VPC route table has a local VPC route by default.
+# We deliberately did NOT add a 0.0.0.0/0 NAT or internet gateway route.
+```
+
+**Why:** Private subnets isolate app/database nodes from direct internet routing; the local route still allows communication within the VPC. No NAT means package downloads from private EC2 may fail.
+
+### 10.3 Security groups and their inbound rules (RECONSTRUCTED)
+
+```bash
+# Create groups (the command returns each group ID)
+aws ec2 create-security-group --group-name day29-app-sg \
+  --description 'Day29 private Nginx app' --vpc-id "$VPC_ID"
+aws ec2 create-security-group --group-name day29-db-sg \
+  --description 'Day29 private PostgreSQL' --vpc-id "$VPC_ID"
+
+# Public HTTP to ALB: the exact creation/name of ALB SG is not in retained logs.
+# This rule is an equivalent of the required access:
+aws ec2 authorize-security-group-ingress --group-id "$ALB_SG" \
+  --protocol tcp --port 80 --cidr 0.0.0.0/0
+
+# Only ALB SG can send HTTP to app SG
+aws ec2 authorize-security-group-ingress --group-id "$APP_SG" \
+  --protocol tcp --port 80 --source-group "$ALB_SG"
+
+# Only app SG can send PostgreSQL traffic to DB SG
+aws ec2 authorize-security-group-ingress --group-id "$DB_SG" \
+  --protocol tcp --port 5432 --source-group "$APP_SG"
+
+# During EICE troubleshooting, SSH 22 was allowed from the relevant SG path.
+# A self-referencing app SG rule was suggested; exact final rule state is not archived.
+# Example (only if this matches your EICE SG design):
+aws ec2 authorize-security-group-ingress --group-id "$APP_SG" \
+  --protocol tcp --port 22 --source-group "$APP_SG"
+```
+
+**Why:** SGs are stateful virtual firewalls. ALB → Nginx uses port 80; private EC2 → RDS uses 5432; EICE → EC2 uses SSH port 22. These are **not** instructions to open PostgreSQL publicly.
+
+### 10.4 Builder EC2, Nginx, and custom AMI (PARTLY RECONSTRUCTED)
+
+The historical builder EC2 launch parameters and builder instance ID are **not available** in the retained record, so the exact `run-instances` command cannot be asserted. The *representative setup commands* for Amazon Linux 2023 are:
+
+```bash
+# Run on the temporary builder EC2 (with working package repository access)
+sudo dnf install -y nginx
+sudo systemctl enable --now nginx
+sudo systemctl status nginx
+curl -I http://localhost/
+
+# From Debian AWS CLI, create a reusable machine image of the configured builder:
+# RECONSTRUCTED; builder instance ID not retained
+aws ec2 create-image --instance-id '<BUILDER_INSTANCE_ID>' \
+  --name day29-nginx-ami --description 'Amazon Linux 2023 with Nginx'
+
+# Actual custom AMI obtained: ami-049625e37c3a6404f
+```
+
+**Why an AMI?** Think of it as a **golden photocopy of a configured server**. New ASG instances start from the same Nginx-ready image. In our private subnets, this avoided installing Nginx over the internet on every replacement instance.
+
+### 10.5 Launch template and Auto Scaling Group (RECONSTRUCTED)
+
+The exact launch-template JSON, instance type, and user-data are **not retained**, so this is a **shape example** rather than the exact executed payload:
+
+```bash
+# RECONSTRUCTED syntax example; the actual template ended at version 2
+aws ec2 create-launch-template \
+  --launch-template-name day29-app-template \
+  --launch-template-data '{
+    "ImageId":"ami-049625e37c3a6404f",
+    "InstanceType":"t3.micro",
+    "NetworkInterfaces":[{
+      "DeviceIndex":0,
+      "AssociatePublicIpAddress":false,
+      "Groups":["sg-01b4d531dfaddb11d"]
+    }]
+  }'
+
+# RECONSTRUCTED equivalent of final ASG configuration
+aws autoscaling create-auto-scaling-group \
+  --auto-scaling-group-name day29-app-asg \
+  --launch-template "LaunchTemplateId=$LT_ID,Version=2" \
+  --min-size 2 --max-size 2 --desired-capacity 2 \
+  --vpc-zone-identifier "$PRIVATE_A,$PRIVATE_B" \
+  --target-group-arns arn:aws:elasticloadbalancing:ap-south-1:426029558221:targetgroup/day29-app-tg/4e3393bb313ab7fd
+```
+
+**Caution:** `t3.micro` and `day29-app-template` above are illustrative, **not verified original values**. The actual verified facts are the template ID/version, AMI ID, ASG name, two private subnets and 2/2/2 capacity.
+
+### 10.6 Target group, public ALB, listener (RECONSTRUCTED)
+
+```bash
+# Nginx target group with HTTP health checks
+aws elbv2 create-target-group --name day29-app-tg \
+  --protocol HTTP --port 80 --target-type instance \
+  --vpc-id "$VPC_ID" --health-check-path '/'
+
+# Internet-facing ALB in existing public subnets
+aws elbv2 create-load-balancer --name day29-app-alb \
+  --type application --scheme internet-facing \
+  --subnets "$PUBLIC_A" "$PUBLIC_B" \
+  --security-groups "$ALB_SG"
+
+# HTTP listener forwards to target group
+aws elbv2 create-listener \
+  --load-balancer-arn arn:aws:elasticloadbalancing:ap-south-1:426029558221:loadbalancer/app/day29-app-alb/a40a8a79ac8a3be8 \
+  --protocol HTTP --port 80 \
+  --default-actions Type=forward,TargetGroupArn=arn:aws:elasticloadbalancing:ap-south-1:426029558221:targetgroup/day29-app-tg/4e3393bb313ab7fd
+```
+
+**Why:** Target group = registry and health check for backend servers. ALB = public front door and traffic distributor. Listener = rule saying what the ALB should do with incoming HTTP port 80 requests.
+
+**Captured HTTP test:**
+
+```bash
+curl -i http://day29-app-alb-494888170.ap-south-1.elb.amazonaws.com/
+```
+
+**ASG self-healing test:** One ASG-managed EC2 was manually terminated through the **Console**. ASG automatically replaced it. This is a verified observation, **not** a claim that an AWS CLI termination command was run.
+
+### 10.7 Private RDS PostgreSQL (CONSOLE CREATION; CLI EQUIVALENTS RECONSTRUCTED)
+
+RDS was configured using the AWS Console. The DB instance was standard PostgreSQL, **not Aurora**, with public access disabled. The following CLI commands explain the equivalent configuration; do not treat the illustrative engine version, instance class or storage as historical facts:
+
+```bash
+# DB subnet group spanning the private subnets
+aws rds create-db-subnet-group \
+  --db-subnet-group-name day29-db-subnet-group \
+  --db-subnet-group-description 'Day29 private DB subnet group' \
+  --subnet-ids "$PRIVATE_A" "$PRIVATE_B"
+
+# RECONSTRUCTED command template. Supply password securely via Console/prompt,
+# not in README, command-line history or a Git repository.
+# aws rds create-db-instance --db-instance-identifier day29-postgres \
+#   --engine postgres --db-instance-class '<CHOSEN_CLASS>' \
+#   --allocated-storage '<CHOSEN_GB>' --master-username postgres \
+#   --db-subnet-group-name day29-db-subnet-group \
+#   --vpc-security-group-ids "$DB_SG" --no-publicly-accessible \
+#   --master-user-password '<DO_NOT_PUT_SECRETS_IN_COMMAND_HISTORY>'
+```
+
+**Captured EC2-side connectivity checks:**
+
+```bash
+getent hosts day29-postgres.c1o4oeako332.ap-south-1.rds.amazonaws.com
+# Observed DNS: 172.31.96.81
+
+timeout 5 bash -c 'echo > /dev/tcp/day29-postgres.c1o4oeako332.ap-south-1.rds.amazonaws.com/5432'
+# Observed: TCP 5432 reachable
+```
+
+**Why:** DB subnet group = eligible network locations for RDS. DB SG = allow PostgreSQL only from app tier. A private RDS endpoint cannot be reached directly from the public internet.
+
+### 10.8 IAM: real failure and diagnosis commands (CAPTURED)
+
+**Error 1:** `SendSSHPublicKey` AccessDenied. Added permission scoped to EC2 instance in existing customer-managed policy.
+
+**Error 2:** `OpenTunnel` AccessDenied. The JSON editor showed it, but the **active default policy version** did not contain it. The user inline policy limit was already exhausted (2,048 non-whitespace characters), so we updated the attached customer-managed policy instead.
+
+```bash
+# Captured: prove policy attached to IAM user
+aws iam list-attached-user-policies \
+  --user-name devops-learner \
+  --profile devops-learner \
+  --query "AttachedPolicies[?PolicyName=='Day29-LaunchTemplate-Policy']" \
+  --output table
+
+# Captured: get default managed-policy version (was v3 before correction)
+aws iam get-policy \
+  --policy-arn arn:aws:iam::426029558221:policy/Day29-LaunchTemplate-Policy \
+  --profile devops-learner \
+  --query 'Policy.DefaultVersionId' --output text
+
+# Captured: inspect the ACTUAL default version, not the JSON editor draft
+aws iam get-policy-version \
+  --policy-arn arn:aws:iam::426029558221:policy/Day29-LaunchTemplate-Policy \
+  --version-id v3 --profile devops-learner \
+  --query 'PolicyVersion.Document' --output json
+```
+
+**Temporary policy statements used:**
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "ec2-instance-connect:SendSSHPublicKey",
+  "Resource": "arn:aws:ec2:ap-south-1:426029558221:instance/i-02c790dcae8fe9e1d"
+},
+{
+  "Effect": "Allow",
+  "Action": "ec2-instance-connect:OpenTunnel",
+  "Resource": "arn:aws:ec2:ap-south-1:426029558221:instance-connect-endpoint/eice-0624119c197966d48"
+}
+```
+
+**Captured successful CLI SSH command:**
+
+```bash
+aws ec2-instance-connect ssh \
+  --instance-id i-02c790dcae8fe9e1d \
+  --connection-type eice \
+  --os-user ec2-user \
+  --region ap-south-1 \
+  --profile devops-learner
+```
+
+### 10.9 SSH port forwarding: failures, fixes, and successful commands (CAPTURED)
+
+```bash
+# FAILED: this AWS CLI version rejected --ssh-option
+aws ec2-instance-connect ssh \
+  --instance-id i-02c790dcae8fe9e1d \
+  --connection-type eice --os-user ec2-user \
+  --region ap-south-1 --profile devops-learner \
+  --ssh-option "-L 15432:day29-postgres.c1o4oeako332.ap-south-1.rds.amazonaws.com:5432" \
+  --ssh-option "-N"
+# Error: Unknown options: --ssh-option
+
+# FAILED: standard SSH without temporary uploaded key
+ssh -N -L 15432:day29-postgres.c1o4oeako332.ap-south-1.rds.amazonaws.com:5432 \
+  -o ProxyCommand="aws ec2-instance-connect open-tunnel --instance-connect-endpoint-id eice-0624119c197966d48 --private-ip-address 172.31.96.110 --remote-port 22 --region ap-south-1 --profile devops-learner" \
+  ec2-user@172.31.96.110
+# Error: Permission denied (publickey,gssapi-keyex,gssapi-with-mic)
+
+# FIX: create local short-lived SSH key pair
+ssh-keygen -t ed25519 -f ~/.ssh/day29-tunnel -N ""
+
+# FIX: publish only public key to EC2 Instance Connect (~60 seconds)
+aws ec2-instance-connect send-ssh-public-key \
+  --instance-id i-02c790dcae8fe9e1d \
+  --instance-os-user ec2-user \
+  --ssh-public-key file://$HOME/.ssh/day29-tunnel.pub \
+  --availability-zone ap-south-1a \
+  --region ap-south-1 --profile devops-learner
+
+# SUCCESS: run immediately after public key upload; keep tunnel running
+ssh -i ~/.ssh/day29-tunnel \
+  -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes -N \
+  -L 15432:day29-postgres.c1o4oeako332.ap-south-1.rds.amazonaws.com:5432 \
+  -o ProxyCommand="aws ec2-instance-connect open-tunnel --instance-connect-endpoint-id eice-0624119c197966d48 --private-ip-address 172.31.96.110 --remote-port 22 --region ap-south-1 --profile devops-learner" \
+  ec2-user@172.31.96.110
+```
+
+**Other failure:** Direct EICE `open-tunnel` to **RDS port 5432** failed (`RemotePort` must be 22 or 3389 in this operation). The working design is **EICE SSH 22 → private EC2 → TCP forwarding to RDS 5432**. EC2 package installs also timed out because no NAT was configured.
+
+### 10.10 PostgreSQL client and SQL: successful commands and output (CAPTURED)
+
+```bash
+# Run on Debian, in a SECOND terminal while SSH tunnel remains open
+psql "host=127.0.0.1 port=15432 dbname=postgres user=postgres sslmode=require"
+# Client 17.12 / server 18.3, TLS 1.3; authenticated successfully.
+```
+
+The first attempt used `user=postgresadmin` and failed authentication. The actual successful RDS master username was `postgres`.
+
+```sql
+CREATE TABLE day29_orders (
+    order_id INT PRIMARY KEY,
+    product VARCHAR(100),
+    amount NUMERIC(10,2)
+);
+
+INSERT INTO day29_orders VALUES
+(101, 'Laptop', 50000),
+(102, 'Mobile', 25000),
+(103, 'Keyboard', 1500);
+
+SELECT * FROM day29_orders;
+```
+
+```text
+CREATE TABLE
+INSERT 0 3
+ order_id | product  |  amount
+----------+----------+----------
+      101 | Laptop   | 50000.00
+      102 | Mobile   | 25000.00
+      103 | Keyboard |  1500.00
+(3 rows)
+```
+
+### 10.11 CloudWatch: what we actually did
+
+**Console:** CloudWatch → Metrics → All metrics → ApplicationELB. The user confirmed viewing metrics. **No alarm or dashboard was created.** We discussed `RequestCount`, `HealthyHostCount`, and HTTP error metrics. An HTTP request-generation command was suggested, but its execution was **not confirmed**:
+
+```bash
+# Suggested during session; NOT confirmed executed
+for i in {1..20}; do
+  curl -s -o /dev/null http://day29-app-alb-494888170.ap-south-1.elb.amazonaws.com/
+done
+```
+
+### 10.12 Cleanup: Console actions actually reported vs CLI equivalents (RECONSTRUCTED)
+
+**Historical truth:** The user chose **root AWS Console** cleanup to avoid more IAM/CLI issues. These are equivalent CLI commands for future study, **not claims that these commands were executed**, and **must not be rerun against unrelated resources**. Destructive operations and waits are shown in the same dependency order as the completed Console walkthrough.
+
+```bash
+# 1) RDS PostgreSQL: Console deletion reported
+aws rds delete-db-instance --db-instance-identifier day29-postgres \
+  --skip-final-snapshot --delete-automated-backups
+
+# Accidental Aurora: writer before cluster (Console deletion reported)
+aws rds delete-db-instance --db-instance-identifier database-1-instance-1 \
+  --skip-final-snapshot
+# Wait for writer deletion before deleting cluster:
+aws rds wait db-instance-deleted --db-instance-identifier database-1-instance-1
+aws rds delete-db-cluster --db-cluster-identifier database-1 \
+  --skip-final-snapshot
+
+# 2) ASG: scale to zero before deleting, otherwise it can replace EC2
+aws autoscaling update-auto-scaling-group \
+  --auto-scaling-group-name day29-app-asg --min-size 0 --desired-capacity 0
+aws autoscaling delete-auto-scaling-group \
+  --auto-scaling-group-name day29-app-asg --force-delete
+
+# 3) ALB, then 4) target group (delete after ALB is gone)
+aws elbv2 delete-load-balancer \
+  --load-balancer-arn arn:aws:elasticloadbalancing:ap-south-1:426029558221:loadbalancer/app/day29-app-alb/a40a8a79ac8a3be8
+aws elbv2 wait load-balancers-deleted \
+  --load-balancer-arns arn:aws:elasticloadbalancing:ap-south-1:426029558221:loadbalancer/app/day29-app-alb/a40a8a79ac8a3be8
+aws elbv2 delete-target-group \
+  --target-group-arn arn:aws:elasticloadbalancing:ap-south-1:426029558221:targetgroup/day29-app-tg/4e3393bb313ab7fd
+
+# 5) Launch template
+aws ec2 delete-launch-template --launch-template-id lt-02f9220287644cf4e
+
+# 6) Custom AMI (may delete associated snapshots if API/permissions support it)
+aws ec2 deregister-image --image-id ami-049625e37c3a6404f \
+  --delete-associated-snapshots
+
+# 7) EICE
+aws ec2 delete-instance-connect-endpoint \
+  --instance-connect-endpoint-id eice-0624119c197966d48
+
+# 8) RDS DB subnet group (after RDS is fully gone)
+aws rds delete-db-subnet-group --db-subnet-group-name day29-db-subnet-group
+
+# 9) Security groups (after removing SG-to-SG references and ENI dependencies)
+# Syntax only: remove any existing referencing ingress rules first.
+aws ec2 delete-security-group --group-id sg-01b4d531dfaddb11d
+aws ec2 delete-security-group --group-id sg-0c8ffce0f9a748b16
+aws ec2 delete-security-group --group-id sg-0208b81b9276707b5
+aws ec2 delete-security-group --group-id sg-0cb23ad5a56f94d5f
+
+# 10) Private route table / subnets: disassociate route-table associations first.
+# Association IDs were not retained; do NOT guess them.
+# aws ec2 disassociate-route-table --association-id '<ASSOCIATION_ID>'
+aws ec2 delete-route-table --route-table-id rtb-0fbccbf5cc01faf72
+aws ec2 delete-subnet --subnet-id subnet-0625a3843c5b1f8f5
+aws ec2 delete-subnet --subnet-id subnet-09e55084870cd5c43
+
+# 11) Final EC2 termination if still running: operator reported Console action.
+# Termination commands omitted deliberately: instances may already be gone,
+# and ASG-created instance IDs change after replacement.
+```
+
+**Delete concepts to remember:** ASG first (prevents re-creation), ALB before target group (releases dependency), RDS before DB subnet group, EICE before subnet, attached resources before security groups, and custom private networking last. AMI deregistration is **not** necessarily snapshot deletion. **Default VPC/public subnets/default SG were deliberately preserved.**
+
+**Remaining operational caveat:** The operator confirmed Console cleanup steps, but the exact final states of any AMI backing snapshot, detached EBS volumes, Elastic IPs, RDS retained backups, and the temporary IAM policy permission were not independently verified. The Billing Credits screenshot showed estimated $1.56 credit usage and $158.44 remaining at that moment; it is not proof of zero active resources.
+
+### 10.13 Five-minute mental model
+
+```text
+Browser → ALB listener :80 → target group + health checks → Nginx EC2 x2
+                                            ↑
+                              ASG maintains desired=2
+Private EC2 (app SG) → DB SG :5432 → RDS PostgreSQL
+Debian psql :15432 → EICE :22 → SSH to private EC2 → RDS :5432
+CloudWatch → metrics observed (no alarm created)
+Cleanup → DB/Aurora → ASG → ALB → TG → LT/AMI → EICE → DB subnet group
+        → SGs → private route/subnets → final EC2 handling
+```
+
+**Interview answer:** “I used an ALB and ASG to keep two Nginx instances serving traffic across private subnets. I built a reusable AMI because the private subnets lacked NAT. The database was private RDS PostgreSQL; I verified access through EC2 Instance Connect, an SSH tunnel, and SQL commands. I resolved IAM policy-version and SSH-key issues, viewed CloudWatch metrics, and completed a dependency-aware Console teardown.”
