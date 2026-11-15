@@ -1,6 +1,6 @@
 # DevOps Winter Arc — Day 28/90: Amazon EKS
 
-> **Lab status:** Local Floci + k3s application deployment **completed and verified**. Real AWS EKS **not created**. Nginx cleanup **verified**; Floci EKS API removal **verified**; Docker container cleanup **not independently verified**.  
+> **Lab status:** Local Floci + k3s application deployment **completed and verified**. Real AWS EKS **not created**. Nginx cleanup **verified**; Floci EKS API removal **verified**; Docker container removal **verified**; separate Kind cluster **preserved**.  
 > **Region used for AWS CLI exercises:** `ap-south-1` (Mumbai).  
 > **Approach:** Learn Kubernetes-on-EKS concepts using a local AWS API emulator, inspect a real AWS configuration with read-only commands and `eksctl --dry-run`, and avoid chargeable AWS cluster creation.
 
@@ -48,7 +48,8 @@ The Day 28 assignment covers EKS control plane, managed node groups, IAM/IRSA, d
 | Real EKS creation | **Not attempted** | Intentionally skipped |
 | Local Nginx cleanup | Two `kubectl get deployments,pods,services` checks showed only `service/kubernetes` | **Verified** |
 | Floci EKS API cleanup | `eks list-clusters` returned `{"clusters": []}` | **Verified** |
-| k3s Docker container removal | `docker ps -a` output not yet supplied | **Pending** |
+| k3s Docker container removal | `docker ps -a --filter name=floci-aws-eks-day28-local-eks` returned headers only | **Verified** |
+| Separate Kind cluster preserved | `docker ps -a --filter name=winter-arc-control-plane` showed the container running | **Verified** |
 
 > **Important version detail:** Floci's EKS API reported Kubernetes `1.29` as simulated metadata, while the actual k3s server was `v1.34.1+k3s1`. These are not evidence of a real AWS EKS cluster. The `kubectl` client (`v1.37.2`) was also several minor versions newer than the k3s server; prefer a supported client/server version skew for ongoing work.
 
@@ -541,9 +542,9 @@ aws eks list-nodegroups --cluster-name <CLUSTER_NAME> --region <REGION>
 - **Real EKS:** published standard-support control-plane pricing has historically been **$0.10 per cluster-hour** (extended-support clusters higher), plus worker compute and optional networking/storage resources. **Check live AWS pricing for your region and support status before a real lab**: <https://aws.amazon.com/eks/pricing/>.
 - **No real EKS resources were created in this activity.** The AWS checks and `eksctl --dry-run` were read-only / previews.
 
-### Local cleanup — **Nginx and Floci EKS API removal verified; Docker check not supplied**
+### Local cleanup — **COMPLETE: workload, Floci EKS API, and Docker verified**
 
-Two successful `kubectl --kubeconfig ~/.kube/day28-floci.yaml get deployments,pods,services` outputs after Nginx cleanup. Both showed **only the built-in `service/kubernetes`**, confirming that `nginx-demo` Deployment, Pods, and Service were absent from the default namespace. The earlier deletion command output itself was not supplied. **The Floci EKS API now returns `{"clusters": []}`, verifying that no EKS cluster is listed. The actual `eks delete-cluster` command output was not supplied, and no `docker ps -a` result was shared. The user considers cleanup finished; Docker removal remains unverified in this record.**
+Two successful `kubectl --kubeconfig ~/.kube/day28-floci.yaml get deployments,pods,services` outputs after Nginx cleanup. Both showed **only the built-in `service/kubernetes`**, confirming that `nginx-demo` Deployment, Pods, and Service were absent from the default namespace. The earlier deletion command output itself was not supplied. **The Floci EKS API now returns `{"clusters": []}`, verifying that no EKS cluster is listed. The actual `eks delete-cluster` command output was not supplied, but the resulting absence of the cluster was verified through both the Floci EKS API and Docker. The separate Kind cluster was also verified to remain running.**
 
 **Step 1 — Stop forwarding:** Stop any active `kubectl port-forward` or watch with `Ctrl+C`.
 
@@ -553,7 +554,7 @@ Two successful `kubectl --kubeconfig ~/.kube/day28-floci.yaml get deployments,po
 
 **Step 4 — Delete the simulated EKS cluster:** Only after verifying the application deletion, run the local AWS CLI deletion command below.
 
-**Step 5 — Verify cluster removal (API VERIFIED; DOCKER NOT CHECKED):** Ran the local Floci `eks list-clusters` command; it returned `{"clusters": []}`. Docker container verification and a final Floci UI refresh have not been supplied.
+**Step 5 — Verify cluster removal (COMPLETED):** The local Floci `eks list-clusters` command returned `{"clusters": []}`. The Docker container query returned only table headers, with no Floci EKS cluster container. A separate Docker query confirmed the existing Kind cluster `winter-arc-control-plane` remained running. A final Floci UI refresh was not supplied and is optional.
 
 Commands (execute sequentially, not as an unreviewed batch):
 
@@ -577,7 +578,23 @@ aws --endpoint-url http://localhost:4566 \
 docker ps -a --filter name=floci-aws-eks-day28-local-eks
 ```
 
-Observed: an empty Floci EKS cluster list. To complete independent verification, confirm there is no matching k3s cluster container. If a container remains, investigate before deleting anything manually. Refresh the Floci UI to verify disappearance.
+**Observed cleanup evidence:**
+
+```text
+$ aws --endpoint-url http://localhost:4566 --region ap-south-1 --no-sign-request eks list-clusters
+{
+    "clusters": []
+}
+
+$ docker ps -a --filter name=floci-aws-eks-day28-local-eks
+CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
+
+$ docker ps -a --filter name=winter-arc-control-plane
+CONTAINER ID   IMAGE                  COMMAND                  CREATED       STATUS       PORTS                       NAMES
+b5d1f2a81219   kindest/node:v1.31.0   "/usr/local/bin/entr…"   12 days ago   Up 2 hours   127.0.0.1:39579->6443/tcp   winter-arc-control-plane
+```
+
+**Conclusion:** The Nginx resources are gone, the Floci EKS cluster is absent from the local API, its k3s Docker container is removed, and the separate Kind cluster remains intact. **Local cleanup is complete.** A final Floci UI screenshot is optional, not a cleanup blocker.
 
 **Do not remove** the separate Kind cluster `winter-arc-control-plane`, the Floci emulator container, or the ECR registry container unless you explicitly intend to. Keep `deployment.yaml` and this README for GitHub; keep `~/.kube/day28-floci.yaml` private. The old kubeconfig can be removed after the cluster is gone if no longer needed.
 
@@ -711,7 +728,7 @@ mindmap
     Outcome
       Local deployment verified
       Real AWS not created
-      Workload cleanup verified; Floci EKS list empty; Docker verification not supplied
+      Local cleanup complete; Floci EKS list empty; k3s Docker container removed; Kind preserved
 ```
 
 If your Markdown viewer does not support Mermaid mind maps, use this text outline:
@@ -724,7 +741,7 @@ Day 28 — Amazon EKS
 ├── Real AWS design: IAM → VPC/subnets → EKS → node group → workloads
 ├── Operations: events | logs | readiness | scaling | EBS/EFS
 ├── Risks: cost | NAT | wrong context | credentials | cleanup
-└── Outcome: local lab complete | real EKS not created | workload removed; Floci EKS list empty; Docker verification not supplied
+└── Outcome: local lab complete | real EKS not created | cleanup verified (Nginx, Floci API, Docker); Kind preserved
 ```
 
 ## 14. Evidence, checklist and references
@@ -751,8 +768,10 @@ Do not publish the real AWS account ID, credentials, kubeconfig contents, or unn
 - [x] Investigate a real AWS IAM permission issue and NAT cost pitfall without provisioning.
 - [x] Verify local Nginx Deployment, Pods, and Service are absent (two checks).
 - [x] Verify the local Floci EKS API lists zero clusters (`{"clusters": []}`).
-- [ ] Verify the local k3s Docker cluster container has been removed.
-- [ ] Add final cleanup screenshot and update this README.
+- [x] Verify the local k3s Docker cluster container has been removed (Docker output: headers only).
+- [x] Verify the separate Kind cluster remains running (`winter-arc-control-plane`).
+- [x] Update this README with final cleanup command outputs.
+- [ ] Optional: add a final Floci UI screenshot.
 - [ ] Optional: test Pod self-healing and document observed output.
 - [ ] Optional future lab: provision and destroy real EKS in an authorized, budgeted sandbox.
 
