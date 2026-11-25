@@ -1,0 +1,23 @@
+
+{
+  "clusterName": "winter-arc-eks",
+  "nodegroupName": "winter-arc-node-group",
+  "scalingConfig": {
+    "minSize": 2,
+    "desiredSize": 2,
+    "maxSize": 3
+  },
+  "diskSize": 20,
+  "subnets": [
+    "subnet-PLACEHOLDER-A",
+    "subnet-PLACEHOLDER-B"
+  ],
+  "instanceTypes": [
+    "t3.small"
+  ],
+  "nodeRole": "arn:aws:iam::000000000000:role/PLACEHOLDER-node-role",
+  "labels": {
+    "workload": "web"
+  },
+  "capacityType": "ON_DEMAND"
+}

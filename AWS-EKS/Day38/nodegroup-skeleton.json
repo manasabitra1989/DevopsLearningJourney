@@ -1,0 +1,73 @@
+{
+    "clusterName": "",
+    "nodegroupName": "",
+    "scalingConfig": {
+        "minSize": 0,
+        "maxSize": 0,
+        "desiredSize": 0
+    },
+    "diskSize": 0,
+    "subnets": [
+        ""
+    ],
+    "instanceTypes": [
+        ""
+    ],
+    "amiType": "AL2_x86_64",
+    "remoteAccess": {
+        "ec2SshKey": "",
+        "sourceSecurityGroups": [
+            ""
+        ]
+    },
+    "nodeRole": "",
+    "labels": {
+        "KeyName": ""
+    },
+    "taints": [
+        {
+            "key": "",
+            "value": "",
+            "effect": "NO_SCHEDULE"
+        }
+    ],
+    "tags": {
+        "KeyName": ""
+    },
+    "clientRequestToken": "",
+    "launchTemplate": {
+        "name": "",
+        "version": "",
+        "id": ""
+    },
+    "updateConfig": {
+        "maxUnavailable": 0,
+        "maxUnavailablePercentage": 0,
+        "updateStrategy": "DEFAULT"
+    },
+    "nodeRepairConfig": {
+        "enabled": true,
+        "maxUnhealthyNodeThresholdCount": 0,
+        "maxUnhealthyNodeThresholdPercentage": 0,
+        "maxParallelNodesRepairedCount": 0,
+        "maxParallelNodesRepairedPercentage": 0,
+        "nodeRepairConfigOverrides": [
+            {
+                "nodeMonitoringCondition": "",
+                "nodeUnhealthyReason": "",
+                "minRepairWaitTimeMins": 0,
+                "repairAction": "Replace"
+            }
+        ]
+    },
+    "capacityType": "ON_DEMAND",
+    "version": "",
+    "releaseVersion": "",
+    "warmPoolConfig": {
+        "enabled": true,
+        "minSize": 0,
+        "maxGroupPreparedCapacity": 0,
+        "poolState": "STOPPED",
+        "reuseOnScaleIn": true
+    }
+}
